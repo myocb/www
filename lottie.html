@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lottie Player (Time & Frames)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: #ddd;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .player-container {
+            width: 800px;
+            background: #2b2b2b;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            padding: 20px;
+            position: relative;
+        }
+
+        #drop-zone {
+            border: 2px dashed #555;
+            background: #333;
+            color: #aaa;
+            border-radius: 6px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        #drop-zone:hover, #drop-zone.drag-over {
+            border-color: #5a5acd;
+            background: #3b3b4d;
+            color: white;
+        }
+
+        #file-input { display: none; }
+
+        #lottie-view {
+            width: 100%;
+            height: 400px;
+            background: #000;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .controls { display: flex; flex-direction: column; gap: 15px; }
+
+        .timeline-wrapper { display: flex; align-items: center; gap: 10px; }
+        
+        input[type="range"] { flex-grow: 1; cursor: pointer; accent-color: #9e9eff; }
+
+        /* 시간/프레임 표시 스타일 */
+        .info-display {
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            color: #aaa;
+            min-width: 180px; /* 시간 표시 공간 확보 */
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            line-height: 1.2;
+        }
+        
+        .info-display .time { color: #fff; font-weight: bold; }
+        .info-display .frames { font-size: 12px; color: #777; }
+
+        .btn-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #333;
+            padding: 10px;
+            border-radius: 6px;
+        }
+
+        .inputs { display: flex; gap: 10px; align-items: center; }
+
+        input[type="number"] {
+            width: 60px;
+            background: #444;
+            border: 1px solid #555;
+            color: white;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        button {
+            background: #555;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-weight: bold;
+        }
+
+        button:hover { background: #666; }
+        button.primary { background: #5a5acd; }
+        button.primary:hover { background: #6b6be0; }
+
+        label { font-size: 12px; color: #bbb; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="player-container">
+        <div id="drop-zone">
+            📂 JSON 파일 드래그 또는 클릭
+        </div>
+        <input type="file" id="file-input" accept=".json">
+
+        <div id="lottie-view"></div>
+
+        <div class="controls">
+            <div class="timeline-wrapper">
+                <button id="play-btn">▶ Play</button>
+                <input type="range" id="scrubber" min="0" value="0" step="1">
+                
+                <div class="info-display">
+                    <span class="time"><span id="cur-time">0.00</span>s / <span id="total-time">0.00</span>s</span>
+                    <span class="frames"><span id="cur-frame">0</span>F / <span id="total-frame">0</span>F</span>
+                </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid #444; width: 100%;">
+
+            <div class="btn-group">
+                <div class="inputs">
+                    <div>
+                        <label>Start (F)</label>
+                        <input type="number" id="seg-start" value="0">
+                    </div>
+                    <div>
+                        <label>End (F)</label>
+                        <input type="number" id="seg-end" value="60">
+                    </div>
+                    <div>
+                        <label><input type="checkbox" id="loop-check" checked> Loop Seg</label>
+                    </div>
+                </div>
+                <button class="primary" id="play-seg-btn">↺ Play Segment</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const container = document.getElementById('lottie-view');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        
+        const scrubber = document.getElementById('scrubber');
+        const playBtn = document.getElementById('play-btn');
+        
+        // 디스플레이 요소들
+        const curTimeSpan = document.getElementById('cur-time');
+        const totalTimeSpan = document.getElementById('total-time');
+        const curFrameSpan = document.getElementById('cur-frame');
+        const totalFrameSpan = document.getElementById('total-frame');
+
+        const segStartInput = document.getElementById('seg-start');
+        const segEndInput = document.getElementById('seg-end');
+        const loopCheck = document.getElementById('loop-check');
+        const playSegBtn = document.getElementById('play-seg-btn');
+
+        let anim = null;
+        let isDragging = false;
+
+        function loadLottie(animationData) {
+            if (anim) anim.destroy();
+
+            const params = {
+                container: container,
+                renderer: 'svg',
+                loop: true,
+                autoplay: false,
+            };
+
+            if (typeof animationData === 'string') {
+                params.path = animationData;
+            } else {
+                params.animationData = animationData;
+            }
+
+            anim = lottie.loadAnimation(params);
+            attachAnimEvents();
+        }
+
+        function attachAnimEvents() {
+            anim.addEventListener('DOMLoaded', () => {
+                const totalFrames = anim.totalFrames;
+                const fps = anim.frameRate; // Lottie 파일 내부의 FPS 값
+                const totalSeconds = totalFrames / fps;
+
+                // UI 초기화
+                scrubber.max = Math.floor(totalFrames);
+                scrubber.value = 0;
+                
+                // 프레임 표시 업데이트
+                totalFrameSpan.innerText = Math.floor(totalFrames);
+                curFrameSpan.innerText = 0;
+
+                // 시간(초) 표시 업데이트 (소수점 2자리)
+                totalTimeSpan.innerText = totalSeconds.toFixed(2);
+                curTimeSpan.innerText = "0.00";
+                
+                segStartInput.value = 0;
+                segEndInput.value = Math.floor(totalFrames);
+                
+                playBtn.innerText = "▶ Play";
+            });
+
+            anim.addEventListener('enterFrame', (e) => {
+                if (!isDragging) {
+                    const frame = e.currentTime; // 현재 프레임 (소수점 포함될 수 있음)
+                    updateDisplay(frame);
+                }
+            });
+        }
+
+        // --- UI 업데이트 헬퍼 함수 ---
+        function updateDisplay(frame) {
+            if(!anim) return;
+
+            const currentFrameInt = Math.round(frame);
+            const fps = anim.frameRate;
+            const currentSeconds = frame / fps; // 현재 프레임 / FPS = 현재 초
+
+            // 슬라이더 업데이트
+            scrubber.value = currentFrameInt;
+
+            // 텍스트 업데이트
+            curFrameSpan.innerText = currentFrameInt;
+            curTimeSpan.innerText = currentSeconds.toFixed(2);
+        }
+
+        // --- 컨트롤 로직 ---
+        scrubber.addEventListener('input', (e) => {
+            if(!anim) return;
+            isDragging = true;
+            const frame = parseFloat(e.target.value);
+            anim.goToAndStop(frame, true);
+            updateDisplay(frame); // 드래그 중에도 시간 업데이트
+        });
+
+        scrubber.addEventListener('change', () => { isDragging = false; });
+
+        playBtn.addEventListener('click', () => {
+            if(!anim) return;
+            anim.resetSegments(true);
+            anim.loop = true;
+            
+            if(anim.isPaused) {
+                anim.play();
+                playBtn.innerText = "❚❚ Pause";
+            } else {
+                anim.pause();
+                playBtn.innerText = "▶ Play";
+            }
+        });
+
+        playSegBtn.addEventListener('click', () => {
+            if(!anim) return;
+            const start = parseFloat(segStartInput.value);
+            const end = parseFloat(segEndInput.value);
+            
+            if (start >= end) {
+                alert("Start 프레임이 End 프레임보다 작아야 합니다.");
+                return;
+            }
+            
+            anim.loop = loopCheck.checked;
+            anim.playSegments([start, end], true);
+            playBtn.innerText = "❚❚ Pause";
+        });
+
+        // --- Drag & Drop ---
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) handleFile(e.target.files[0]);
+        });
+
+        ['dragenter', 'dragover'].forEach(evt => {
+            dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+        });
+        ['dragleave', 'drop'].forEach(evt => {
+            dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); });
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) handleFile(files[0]);
+        });
+
+        function handleFile(file) {
+            if (file.type !== "application/json" && !file.name.endsWith('.json')) {
+                alert("JSON 파일만 가능합니다.");
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const jsonData = JSON.parse(e.target.result);
+                    loadLottie(jsonData);
+                    dropZone.innerText = `✅ Loaded: ${file.name}`;
+                } catch (err) {
+                    console.error(err);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        loadLottie('https://assets9.lottiefiles.com/packages/lf20_m64r7cwa.json');
+    </script>
+</body>
+</html>
