@@ -26,8 +26,6 @@
             height: auto;
             line-height: normal; 
         }
-
-
         </style>
 
         <script type="text/javascript">
@@ -43,6 +41,7 @@
 
             var PARAM_URL = "url" + EQUAL;
             var PARAM_TITLE = "title" + EQUAL;
+            var PARAM_EVENT_ID = "eventId" + EQUAL;
 
             //------------------------------------------------
             function StringUtil() {
@@ -94,6 +93,7 @@
                 var command = getValue('ocb_command');
                 var url = getValue('ocb_url');
                 var title = getValue('ocb_title');
+                var eventId = getValue('ocb_event_id');
 
                 var sb = new StringBuilder();
                 // scheme 
@@ -114,6 +114,12 @@
                         sb.append(AMPERSAND);
                         sb.append(PARAM_TITLE);
                         sb.append(encodeURIComponent(title.trim()));
+                    }
+
+                    if (!StringUtil.isEmpty(eventId)) {
+                        sb.append(AMPERSAND);
+                        sb.append(PARAM_EVENT_ID);
+                        sb.append(encodeURIComponent(eventId.trim()));
                     }
                 }
 
@@ -211,6 +217,10 @@
                     <td class="right"><input class="table-cell" type="text" id="ocb_title"  value="이벤트"/></td>
                 </tr>
                 <tr>
+                    <td class="left"><label for="element_4">Event ID</label></td>
+                    <td class="right"><input class="table-cell" type="text" id="ocb_event_id"  value=""/></td>
+                </tr>
+                <tr>
                     <td class="left"><label for="element_1"><b>(iOS) Universal Link</b></label></td>
                     <td class="right">
                         <select class="form-control" id="s01">
@@ -279,9 +289,5 @@
                 </fieldset>
             </form>
         </div>
-
-
-        </div>
-
     </body>
 </html>
